@@ -3,46 +3,70 @@
 
 #include <HID-Project.h>
 
-const int debounceDelay = 5000; // Debounce delay in milliseconds
+class Debouncer {
+  const int _debounceDelay;  // Debounce delay in milliseconds
+  int _lastActivation;
+public:
+  Debouncer(int debounceDelay)
+    : _debounceDelay(debounceDelay), _lastActivation(0) {}
+  bool tooSoon() const {
+    return millis() - _lastActivation < _debounceDelay;
+  }
+  void reset() {
+    _lastActivation = millis();
+  }
+} debouncer(5000);
 
 int stage = 0;
 
-unsigned long lastActivation = 0;
-
-String active_prompt = "";
-
 class Button {
   const int _pin_num;
-  const String _prompt;
 public:
-  Button(int pin_num, const String&& prompt): _pin_num(pin_num), _prompt(prompt) {
+  const String content;
+  Button(int pin_num, const String&& content)
+    : _pin_num(pin_num), content(content) {
     pinMode(pin_num, INPUT_PULLUP);
   }
-  void read() {
-    if (digitalRead(_pin_num) == LOW)
-      active_prompt = _prompt;
+  void read(Button*& out) {
+    if (digitalRead(_pin_num) == LOW) {
+      Serial.print("Pressed: ");
+      Serial.println(_pin_num);
+      out = this;
+    }
   }
 };
 
-Button buttons[] = {{2, "Explain this in detail:"},
-                    {3, "Summarize to one or two paragraphs:"},
-                    {5, "Rewrite this to be more professional:"},
-                    {6, "Translate this to English:"},
-                    {9, "Write a poem about this:"}};
+Button prompt_buttons[] = { { 2, "Explain this in detail:" },
+                            { 3, "Summarize to one or two paragraphs:" },
+                            { 5, "Rewrite this to be more professional:" },
+                            { 6, "Translate this to English:" },
+                            { 9, "Write a poem about this:" } };
+
+Button LLM_buttons[] = { { 11, "https://chat.openai.com/" },
+                         { 12, "https://gemini.google.com/app" },
+                         { 13, "https://claude.ai/new" }};
+
+Button* active_prompt = nullptr;
+Button* active_LLM = &LLM_buttons[0];  // There must always be a valid LLM activated.
 
 void setup() {
   Keyboard.begin();
 }
 
 void loop() {
+  // Check every time if the user switched the LLM to use, if so overwrite
+  for (const Button& button : LLM_buttons)
+    button.read(active_LLM);
+
   switch (stage) {
     case 0:  // nothing yet, check if we should activate
-      if (millis() - lastActivation < debounceDelay) return; // Too soon
-      for(const Button& button: buttons)
-        button.read();
-      if (active_prompt.length() == 0) return;  // No button pressed, also leave
+      if (debouncer.tooSoon()) return;
+      active_prompt = nullptr;
+      for (const Button& button : prompt_buttons)
+        button.read(active_prompt);
+      if (!active_prompt) return;
       // If we didn't leave, we have a valid keypress
-      lastActivation = millis();  // reset debounce
+      debouncer.reset();
       break;
     // Case > 0 -> Send the instructions
     case 1:  // Copy selected text
@@ -54,21 +78,24 @@ void loop() {
       Keyboard.press('t');
       break;
     case 3:  // Navigate to ChatGPT
-      Keyboard.print("https://chat.openai.com/");
+      Keyboard.print(active_LLM->content);
       Keyboard.press(KEY_RETURN);
       break;
     case 4:         // Add the prompt
-      delay(2000);  // Wait for the page to load, adjust this delay as needed
+      delay(4000);  // Wait for the page to load, adjust this delay as needed
       Keyboard.releaseAll();
-      Keyboard.print(active_prompt);
-      active_prompt = "";
-    case 5: // add newline without sending message
+      string const& prompt = active_prompt ? active_prompt->content : "ERROR no prompt selected";
+      Keyboard.print(prompt);
+      active_prompt = nullptr;
+    case 5:  // add newline without sending message
       Keyboard.press(KEY_LEFT_SHIFT);
       Keyboard.press(KEY_ENTER);
       break;
     case 6:  // Paste the copied text
       Keyboard.press(KEY_LEFT_CTRL);
       Keyboard.press('v');
+      break;
+    case 7:  // Send message to LLM
       Keyboard.press(KEY_RETURN);
       break;
     default:
