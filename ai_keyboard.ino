@@ -44,7 +44,7 @@ Button prompt_buttons[] = { { 2, "Explain this in detail:" },
 
 Button LLM_buttons[] = { { 11, "https://chat.openai.com/" },
                          { 12, "https://gemini.google.com/app" },
-                         { 13, "https://claude.ai/new" }};
+                         { 13, "https://claude.ai/new" } };
 
 Button* active_prompt = nullptr;
 Button* active_LLM = &LLM_buttons[0];  // There must always be a valid LLM activated.
@@ -58,6 +58,9 @@ void loop() {
   for (const Button& button : LLM_buttons)
     button.read(active_LLM);
 
+  if (stage > 20) stage = 0;  // Failsafe. Sometimes "default" doesn't trigger.
+
+  // We need to do it in stages becasue doing everything in the same loop was causing glitches.
   switch (stage) {
     case 0:  // nothing yet, check if we should activate
       if (debouncer.tooSoon()) return;
@@ -65,47 +68,57 @@ void loop() {
       for (const Button& button : prompt_buttons)
         button.read(active_prompt);
       if (!active_prompt) return;
-      // If we didn't leave, we have a valid keypress
+      Serial.println(F("valid keypress"));
       debouncer.reset();
       break;
     // Case > 0 -> Send the instructions
-    case 1:  // Copy selected text
+    case 1:
+      Serial.println(F("Copy selected text"));
       Keyboard.press(KEY_LEFT_CTRL);
       Keyboard.press('c');
       break;
-    case 2:  // Open new browser tab
+    case 2:
+      Serial.println(F("Open new browser tab"));
       Keyboard.press(KEY_LEFT_CTRL);
       Keyboard.press('t');
       break;
-    case 3:  // Navigate to ChatGPT
+    case 3:
+      Serial.println(F("Navigate to the selected LLM"));
       Keyboard.print(active_LLM->content);
       Keyboard.press(KEY_RETURN);
       break;
-    case 4:         // Add the prompt
-      delay(4000);  // Wait for the page to load, adjust this delay as needed
+    case 4:
+      Serial.println(F("Add the prompt"));
+      delay(2000);  // Wait for the page to load, adjust this delay as needed
       Keyboard.releaseAll();
-      string const& prompt = active_prompt ? active_prompt->content : "ERROR no prompt selected";
+      const String& prompt = active_prompt ? active_prompt->content : "ERROR no prompt selected";
       Keyboard.print(prompt);
       active_prompt = nullptr;
-    case 5:  // add newline without sending message
+      break;
+    case 5:
+      Serial.println(F("add newline without sending message"));
       Keyboard.press(KEY_LEFT_SHIFT);
       Keyboard.press(KEY_ENTER);
       break;
-    case 6:  // Paste the copied text
+    case 6:
+      Serial.println(F("Paste the copied text"));
       Keyboard.press(KEY_LEFT_CTRL);
       Keyboard.press('v');
       break;
-    case 7:  // Send message to LLM
+    case 7:
+      Serial.println(F("Send message to LLM"));
       Keyboard.press(KEY_RETURN);
       break;
     default:
-      // We ran out of valid stages; reset
+      Serial.println(F("We ran out of valid stages; reset"));
       stage = 0;
+      Serial.print(F("Reset done, stage is now: "));
+      Serial.println(stage);
       return;
   }
   delay(100);
   Keyboard.releaseAll();
-  Serial.print("Done stage:");
+  Serial.print(F("Done stage:"));
   Serial.println(stage);
   stage += 1;
 }
